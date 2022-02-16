@@ -338,7 +338,31 @@ abstract contract Pausable is Context {
     }
 }
 
-contract Fit is ERC20, Pausable, AccessControl {
+abstract contract Blacklist {
+  mapping(address => bool) public blacklist;
+
+  event AddBlacklist(address indexed account, address indexed caller);
+  event RevokeBlacklist(address indexed account, address indexed caller);
+  modifier notInBlacklist(address account) {
+    require(!blacklist[account], "Address is in blacklist");
+    _;
+  }
+  modifier inBlacklist(address account) {
+    require(blacklist[account], "Address is not in blacklist");
+    _;
+  }
+  function _addBlacklist(address account) internal virtual notInBlacklist(account) {
+    blacklist[account] = true;
+    emit AddBlacklist(account, msg.sender);
+  }
+  function _revokeBlacklist(address account) internal virtual inBlacklist(account) {
+    blacklist[account] = false;
+    emit RevokeBlacklist(account, msg.sender);
+  }
+
+}
+
+contract Fit is ERC20, Pausable, AccessControl, Blacklist {
     uint256 public constant HARD_CAP = 100_000_000 ether;
     bytes32 private constant MINTER_ROLE = keccak256("MINTER_ROLE");
     bytes32 private constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
@@ -367,5 +391,21 @@ contract Fit is ERC20, Pausable, AccessControl {
     {
         super._beforeTokenTransfer(from, to, amount);
     }
-    
+    function airDropERC20(IERC20 _token, address[] calldata _toAccount, uint256[] calldata _value) public {
+       require(_toAccount.length == _value.length, "Receivers and amounts are different length");
+       for(uint256 i = 0; i < _toAccount.length; i++) {
+           if(!blacklist[_toAccount[i]]) {
+            require(_token.transferFrom(msg.sender, _toAccount[i], _value[i]));
+           }
+           //require(blacklist[_toAccount[i]], require(_token.transferFrom(msg.sender, _toAccount[i], _value[i])));
+       } 
+    }
+    //function addBlacklist(address account) internal onlyRole(MINTER_ROLE) {
+    function addBlacklist(address account) public {
+        _addBlacklist(account);
+    }
+    //function revokeBlacklist(address account) internal onlyRole(MINTER_ROLE) {
+    function revokeBlacklist(address account) internal onlyRole(MINTER_ROLE) {
+        _revokeBlacklist(account);
+    }
 }
