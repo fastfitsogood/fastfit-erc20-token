@@ -339,24 +339,35 @@ abstract contract Pausable is Context {
 }
 
 abstract contract Blacklist {
-  mapping(address => bool) public blacklist;
+  struct blacklistInfo {
+      bool isBlacklist;
+      address blacklistAddress;
+      uint8 cause;
+  }
+  mapping(address => blacklistInfo) public blacslist;
 
   event AddBlacklist(address indexed account, address indexed caller);
   event RevokeBlacklist(address indexed account, address indexed caller);
   modifier notInBlacklist(address account) {
-    require(!blacklist[account], "Address is in blacklist");
+    require(!blacslist[account].isBlacklist, "Address is in blacklist");
     _;
   }
   modifier inBlacklist(address account) {
-    require(blacklist[account], "Address is not in blacklist");
+    require(blacslist[account].isBlacklist, "Address is not in blacklist");
     _;
   }
-  function _addBlacklist(address account) internal virtual notInBlacklist(account) {
-    blacklist[account] = true;
+  function _addBlacklist(address account, uint8 cause) internal virtual notInBlacklist(account) {
+    if(cause < 4 && cause > 0) {
+        blacslist[account].isBlacklist = true;
+        blacslist[account].blacklistAddress = account;
+        blacslist[account].cause = cause;
+    }
     emit AddBlacklist(account, msg.sender);
   }
   function _revokeBlacklist(address account) internal virtual inBlacklist(account) {
-    blacklist[account] = false;
+    blacslist[account].isBlacklist = false;
+    blacslist[account].blacklistAddress = 0x0000000000000000000000000000000000000000;
+    blacslist[account].cause = 0;
     emit RevokeBlacklist(account, msg.sender);
   }
 
@@ -394,18 +405,19 @@ contract Fit is ERC20, Pausable, AccessControl, Blacklist {
     function airDropERC20(IERC20 _token, address[] calldata _toAccount, uint256[] calldata _value) public {
        require(_toAccount.length == _value.length, "Receivers and amounts are different length");
        for(uint256 i = 0; i < _toAccount.length; i++) {
-           if(!blacklist[_toAccount[i]]) {
+           if(!blacslist[_toAccount[i]].isBlacklist) {
             require(_token.transferFrom(msg.sender, _toAccount[i], _value[i]));
            }
            //require(blacklist[_toAccount[i]], require(_token.transferFrom(msg.sender, _toAccount[i], _value[i])));
        } 
     }
-    //function addBlacklist(address account) internal onlyRole(MINTER_ROLE) {
-    function addBlacklist(address account) public {
-        _addBlacklist(account);
+    //function addBlacklist(address account, uint8 cause) internal onlyRole(MINTER_ROLE) {
+    function addBlacklist(address account, uint8 cause) public {
+        _addBlacklist(account, cause);
     }
     //function revokeBlacklist(address account) internal onlyRole(MINTER_ROLE) {
-    function revokeBlacklist(address account) internal onlyRole(MINTER_ROLE) {
+    function revokeBlacklist(address account) public {
         _revokeBlacklist(account);
     }
+
 }
