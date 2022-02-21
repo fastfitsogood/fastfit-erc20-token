@@ -338,26 +338,58 @@ abstract contract Pausable is Context {
     }
 }
 
-contract Fit is ERC20, Pausable, AccessControl {
-    uint256 public constant HARD_CAP = 100_000_000 ether;
-    bytes32 private constant MINTER_ROLE = keccak256("MINTER_ROLE");
-    bytes32 private constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+abstract contract Blacklist {
+  struct blacklistInfo {
+      bool isBlacklist;
+      address blacklistAddress;
+      uint8 cause;
+  }
+  mapping(address => blacklistInfo) public blacslist;
 
-    constructor() ERC20("fit", "FIT") {
-        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _grantRole(MINTER_ROLE, msg.sender);
-        _grantRole(PAUSER_ROLE, msg.sender);
+  event AddBlacklist(address indexed account, address indexed caller);
+  event RevokeBlacklist(address indexed account, address indexed caller);
+  modifier notInBlacklist(address account) {
+    require(!blacslist[account].isBlacklist, "Address is in blacklist");
+    _;
+  }
+  modifier inBlacklist(address account) {
+    require(blacslist[account].isBlacklist, "Address is not in blacklist");
+    _;
+  }
+  function _addBlacklist(address account, uint8 cause) internal virtual notInBlacklist(account) {
+    if(cause < 4 && cause > 0) {
+        blacslist[account].isBlacklist = true;
+        blacslist[account].blacklistAddress = account;
+        blacslist[account].cause = cause;
+    }
+    emit AddBlacklist(account, msg.sender);
+  }
+  function _revokeBlacklist(address account) internal virtual inBlacklist(account) {
+    blacslist[account].isBlacklist = false;
+    blacslist[account].blacklistAddress = 0x0000000000000000000000000000000000000000;
+    blacslist[account].cause = 0;
+    emit RevokeBlacklist(account, msg.sender);
+  }
+
+}
+
+contract Fit is ERC20, Pausable, AccessControl, Blacklist {
+    uint256 public constant HARD_CAP = 100_000_000 ether;
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+
+    constructor(address _admin) ERC20("fit", "FIT") {
+        _grantRole(ADMIN_ROLE, _admin);
         _mint(msg.sender, 100000000 * 10 ** decimals());
     }
 
-    function mint(address to, uint256 amount) public onlyRole(MINTER_ROLE) {
+    function mint(address to, uint256 amount) public onlyRole(ADMIN_ROLE) {
         require(totalSupply() + amount <= HARD_CAP, "KAP20: totalSupply exceeds HARD_CAP");
         _mint(to, amount);
     }
-    function pause() public onlyRole(PAUSER_ROLE) {
+    function pause() public onlyRole(ADMIN_ROLE) {
         _pause();
     }
-    function unpause() public onlyRole(PAUSER_ROLE) {
+    function unpause() public onlyRole(ADMIN_ROLE) {
         _unpause();
     }
     function _beforeTokenTransfer(address from, address to, uint256 amount)
@@ -367,5 +399,24 @@ contract Fit is ERC20, Pausable, AccessControl {
     {
         super._beforeTokenTransfer(from, to, amount);
     }
-    
+    function burn(address account, uint256 amount) public {
+        _burn(account, amount);
+    }
+    function airDropERC20(IERC20 sender, address[] calldata _toAccount, uint256[] calldata _value) public {
+       require(_toAccount.length == _value.length, "Receivers and amounts are different length");
+       for(uint256 i = 0; i < _toAccount.length; i++) {
+           if(!blacslist[_toAccount[i]].isBlacklist) {
+            require(sender.transferFrom(msg.sender, _toAccount[i], _value[i]));
+           }
+           //require(blacklist[_toAccount[i]], require(sender.transferFrom(msg.sender, _toAccount[i], _value[i])));
+       } 
+    }
+    function addBlacklist(address account, uint8 cause) internal onlyRole(ADMIN_ROLE) {
+    //function addBlacklist(address account, uint8 cause) public {
+        _addBlacklist(account, cause);
+    }
+    function revokeBlacklist(address account) internal onlyRole(ADMIN_ROLE) {
+    //function revokeBlacklist(address account) public {
+        _revokeBlacklist(account);
+    }
 }
