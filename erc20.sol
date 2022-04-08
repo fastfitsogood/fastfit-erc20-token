@@ -20,6 +20,7 @@ interface IERC20Metadata is IERC20 {
     function name() external view returns (string memory);
     function symbol() external view returns (string memory);
     function decimals() external view returns (uint8);
+    function totalMint() external view returns (uint256);
 }
 
 abstract contract Context {
@@ -38,6 +39,7 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
     mapping(address => mapping(address => uint256)) private _allowances;
 
     uint256 private _totalSupply;
+    uint256 private _totalMint;
 
     string private _name;
     string private _symbol;
@@ -57,6 +59,10 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
     function totalSupply() public view virtual override returns (uint256) {
         return _totalSupply;
     }
+    function totalMint() public view virtual override returns (uint256) {
+        return _totalMint;
+    }
+
     function balanceOf(address account) public view virtual override returns (uint256) {
         return _balances[account];
     }
@@ -123,6 +129,8 @@ contract ERC20 is Context, IERC20, IERC20Metadata {
         _beforeTokenTransfer(address(0), account, amount);
 
         _totalSupply += amount;
+        _totalMint += amount;
+
         _balances[account] += amount;
         emit Transfer(address(0), account, amount);
 
@@ -373,17 +381,16 @@ abstract contract Blacklist {
 
 }
 
-contract Fit is ERC20, Pausable, AccessControl, Blacklist {
+contract FIT is ERC20, Pausable, AccessControl, Blacklist {
     uint256 public constant HARD_CAP = 100_000_000 ether;
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
 
-    constructor(address _admin) ERC20("fit", "FIT") {
+    constructor(address _admin) ERC20("FASFIT Token", "FIT") {
         _grantRole(ADMIN_ROLE, _admin);
-        _mint(msg.sender, 100000000 * 10 ** decimals());
     }
 
     function mint(address to, uint256 amount) public onlyRole(ADMIN_ROLE) {
-        require(totalSupply() + amount <= HARD_CAP, "KAP20: totalSupply exceeds HARD_CAP");
+        require(totalMint() + amount <= HARD_CAP, "KAP20: totalSupply exceeds HARD_CAP");
         _mint(to, amount);
     }
     function pause() public onlyRole(ADMIN_ROLE) {
@@ -392,31 +399,25 @@ contract Fit is ERC20, Pausable, AccessControl, Blacklist {
     function unpause() public onlyRole(ADMIN_ROLE) {
         _unpause();
     }
+    function burn(address account, uint256 amount) public {
+        _burn(account, amount);
+    }
+    function adminAddBlacklist(address account, uint8 cause) public onlyRole(ADMIN_ROLE) {
+        _addBlacklist(account, cause);
+    }
+    function adminRevokeBlacklist(address account) public onlyRole(ADMIN_ROLE) {
+        _revokeBlacklist(account);
+    }
+    function adminAirdrop(address sender, address recipient, uint256 amount) public onlyRole(ADMIN_ROLE) {
+        require(!blacslist[recipient].isBlacklist);
+        transferFrom(sender, recipient, amount);
+    }
+
     function _beforeTokenTransfer(address from, address to, uint256 amount)
         internal
         whenNotPaused
         override
     {
         super._beforeTokenTransfer(from, to, amount);
-    }
-    function burn(address account, uint256 amount) public {
-        _burn(account, amount);
-    }
-    function airDropERC20(IERC20 sender, address[] calldata _toAccount, uint256[] calldata _value) public {
-       require(_toAccount.length == _value.length, "Receivers and amounts are different length");
-       for(uint256 i = 0; i < _toAccount.length; i++) {
-           if(!blacslist[_toAccount[i]].isBlacklist) {
-            require(sender.transferFrom(msg.sender, _toAccount[i], _value[i]));
-           }
-           //require(blacklist[_toAccount[i]], require(sender.transferFrom(msg.sender, _toAccount[i], _value[i])));
-       } 
-    }
-    function addBlacklist(address account, uint8 cause) internal onlyRole(ADMIN_ROLE) {
-    //function addBlacklist(address account, uint8 cause) public {
-        _addBlacklist(account, cause);
-    }
-    function revokeBlacklist(address account) internal onlyRole(ADMIN_ROLE) {
-    //function revokeBlacklist(address account) public {
-        _revokeBlacklist(account);
     }
 }
